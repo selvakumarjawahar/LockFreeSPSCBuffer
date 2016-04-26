@@ -29,12 +29,12 @@ The method AquireWritePtr takes a (T*&) as argument and returns a bool. if there
     }
   Reading is similar to writing, first aquire the read ptr and then release the readptr. There are couple of differences though, first is AquireReadPtr takes reference to an std::pair<T*,int> as its argument. this will give the readptr and the readsize. 
   
-  # Communicating end of stream
+# Communicating end of stream
   producer can notify consumer about the end of stream condition. The following are the functions for the same
    SetEOS(), GetEOS()
    These are thread safe.
   
-  # Resetting buffer
+# Resetting buffer
    In some scenarios the pipeline might require a reset. To do that you can use
    ResetCircularBuffer(). But note that this call is not thread safe
   
