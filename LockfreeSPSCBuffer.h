@@ -5,38 +5,13 @@
 #include <fstream>
 #include <new>
 #include <utility>
-/*
-USAGE:
-create object with same 1K MTU so buffersize=1 and speed say 10mbps so  dataspeed 10000000
-GetCircBufferBasePtr()
-
-from buffer writer thread
-GetCircularBufferWriteOffset()
-IncrementCircularBufferWriteOffset(no of bytes written in buf)
-(write data)
-once file is over
-SetFileComplete()
-
-from buffer reader thread
-GetCircularBufferReadSize() equal to or lesser than MTU bytes
-GetCircularBufferReadOffset()
-read data  from buffer
-SetCircularBufferReadOffset()
-
-finally destroy object.
-DestroyCB();
-*/
-//This can be instantiated like 
-//circular_buffer_template<TSPKT_st, 4096, BufferAllocUsingNew> circular_buffer_instance;
 
 template< class T, 
 		  unsigned int align, 
-		  template<class,unsigned int> class BufferAllocPolicy= BufferAllocUsingNew>
-class LockfreeSPSCBuffer : public BufferAllocPolicy<T, align>
+		  template<class,unsigned int> class BufferAllocPolicy>
+class LockfreeSPSCBuffer : private BufferAllocPolicy<T, align>
 {
 public:
-	//		typedef boost::mutex::scoped_lock lock; 
-	//		bounded_buffer(int n) : begin(0), end(0), buffered(0), circular_buf(n) { }
 		LockfreeSPSCBuffer(int NoofTUnits) :begin(0), end(0), sizeinTUnits(NoofTUnits){
 		unsigned int sizeinbytes;
 		sizeinbytes = NoofTUnits*sizeof(T);
@@ -57,8 +32,6 @@ public:
 		writebusy = false;
 		readbusy = false;
 	}
-	//circular_buffer_template(const circular_buffer_template&) = delete;
-	//circular_buffer_template& operator= (const circular_buffer_template&) = delete;
 	bool AquireWritePtr(T*& writeptr) {
 		auto index = GetCircularBufferWriteOffset();
 		if (index == -1)return false;
@@ -67,6 +40,20 @@ public:
 			return false;
 		}
 		writeptr = index + baseptr;
+		writebusy = true;
+		return true;
+	}
+	bool AquireWritePtr(std::pair<T*, int>&wrinfo) {
+		int noofTunitstowr;	
+		auto index = GetCircularBufferWriteOffset(noofTunitstowr);
+		if(index == -1)
+			return false;
+		if(writebusy) {		
+			std::cout << "you have to release the write pointer" << "\n";
+			return false;
+		}
+		wrinfo.first=index + baseptr;
+		wrinfo.second=noofTunitstowr;
 		writebusy = true;
 		return true;
 	}
@@ -110,9 +97,9 @@ public:
 	bool GetEOS() {
 		return eos_;
 	}
+	LockfreeSPSCBuffer(const LockfreeSPSCBuffer&) = delete;
+	LockfreeSPSCBuffer& operator= (const LockfreeSPSCBuffer&) = delete;
 	~LockfreeSPSCBuffer() {
-		//		delete [] circular_buffer;
-		//cout << "circ_buf template Object is destroyed" << endl;
 		DestroyCB();
 	}
 private:
@@ -127,6 +114,21 @@ private:
 		else
 			return end;
 	}
+	int GetCircularBufferWriteOffset(int& NoOfTUnitsEmpty){
+
+		int temp;
+		temp = buffered.load(std::memory_order_acquire);
+		if (temp == sizeinTUnits)
+			return -1;
+		else{
+			NoOfTUnitsEmpty = sizeinTUnits-temp; 
+			if((NoOfTUnitsEmpty + end) > sizeinTUnits){ //readoffset < writeoffset return T units upto end of buffer
+				NoOfTUnitsEmpty=sizeinTUnits-end;
+			}	
+			return end;
+		}
+
+	}		
 	void IncrementCircularBufferWriteOffset(int temp){ //temp->no of T units to advance the write pointer with.
 		end = (end + temp) % sizeinTUnits; //sizeinTUnits
 		buffered.fetch_add(temp, std::memory_order_relaxed);
@@ -136,16 +138,12 @@ private:
 		int temp;
 		//int sizetosend = 0;
 		temp = buffered.load(std::memory_order_consume);
-		return temp;
-	#if 0	
-		if ((temp != 0) || (filereadover == 1)) {
-			sizetosend = TS_DATA_PER_MTU;
-			if (temp < TS_DATA_PER_MTU)
-				sizetosend = temp;
-		}
+		if((temp + begin) > sizeinTUnits){
 
-		return sizetosend;
-	#endif	
+			temp = sizeinTUnits-begin;
+
+		}	
+		return temp;
 	}
 	int GetCircularBufferReadOffset(){
 		return begin;
@@ -158,7 +156,6 @@ private:
 		return sizeinTUnits;
 	}
 	void DestroyCB(){
-		//std::cout << "Buffer Destroyed" << std::endl;
 		this->BufferRelease(circular_buffer);
 	}
 
