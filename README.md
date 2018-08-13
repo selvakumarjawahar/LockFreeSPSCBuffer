@@ -38,6 +38,6 @@ The method AquireWritePtr takes a (T*&) as argument and returns a bool. if there
    In some scenarios the pipeline might require a reset. To do that you can use
    ResetCircularBuffer(). But note that this call is not thread safe
   
-  Complete code example can be found in main.cpp. If any doubts please contact as at selvaprash@gmail.com 
+  Complete code example can be found in main.cpp. 
 
 
